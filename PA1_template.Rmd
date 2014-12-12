@@ -1,25 +1,153 @@
 ---
 title: "Reproducible Research: Peer Assessment 1"
+author: "David Lindelöf"
+date: "December 12th, 2014"
 output: 
   html_document:
     keep_md: true
 ---
 
+The goal of this study is to explore the data recorded on the number of steps taken
+by an individual. The data consists in a compressed CSV file with three columns:
+
+* The number of steps
+* The day, in ISO 8601 (YYYY-MM-DD) format
+* The 5-minute interval in the day, given as `HHMM` (e.g. `0535` means 05:35)
 
 ## Loading and preprocessing the data
 
+To load the data we use R's facility for dealing with compressed files directly,
+and convert it to a data frame:
+
+```{r}
+raw.file <- unz("activity.zip", "activity.csv")
+steps <- read.csv(raw.file)
+summary(steps)
+```
 
 
 ## What is mean total number of steps taken per day?
 
+We compute the total number of steps for each day. This will also yield the mean and median
+number of steps:
 
+```{r}
+steps.by.day <- aggregate(steps ~ date, steps, sum)
+summary(steps.by.day)
+```
+
+And now we histogram them:
+
+```{r}
+library(lattice)
+histogram(~ steps, 
+          steps.by.day, 
+          breaks = seq(0, 22000, 2000),
+          xlab = "Daily steps")
+```
 
 ## What is the average daily activity pattern?
 
+To answer this question we use `aggregate` again, but this time taking the mean of the 
+number of steps:
+
+```{r}
+steps.by.interval <- aggregate(steps ~ interval, steps, mean)
+summary(steps.by.interval)
+```
+
+We plot the mean number of steps for each 5-minute interval:
+
+```{r}
+xyplot(steps ~ interval,
+       steps.by.interval,
+       type = "l",
+       grid = TRUE,
+       xlab = "5-minute interval",
+       ylab = "Mean number of steps")
+```
+
+The interval with the highest average number of steps can be found like this:
+
+```{r}
+steps.by.interval[which.max(steps.by.interval$steps),]
+```
 
 
-## Imputing missing values
+## Inputting missing values
 
+Let's fist check how many missing values there are:
 
+```{r}
+sum(is.na(steps$steps))
+```
+
+For each interval with missing data, we fill the missing values by looking up, from `steps.by.interval`, the mean number of steps
+corresponding to that interval:
+
+```{r}
+steps.filled <- within(steps, {
+  missing <- is.na(steps)
+  steps[missing] <- steps.by.interval[match(interval[missing],
+                                            steps.by.interval$interval),]$steps
+  rm(missing)
+})
+summary(steps.filled)
+```
+
+As above, we compute the daily statistics:
+
+```{r}
+steps.filled.by.day <- aggregate(steps ~ date, steps.filled, sum)
+summary(steps.filled.by.day)
+```
+
+There are no significant differences between the filled-in data frame and the original one.
+Let's now plot it again:
+
+```{r}
+histogram(~ steps,
+          steps.filled.by.day,
+          breaks = seq(0, 22000, 2000),
+          xlab = "Daily steps")
+```
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+First we augment the filled-in data frame with a factor, stating whether the day
+was a normal working day or a weekend day:
+
+```{r}
+steps.filled <- within(steps.filled, {
+  weekday <- weekdays(as.POSIXct(date))
+  type <- factor(ifelse(weekday %in% c("Sunday", "Saturday"),
+                        "Weekend",
+                        "Weekday"))
+  rm(weekday)
+})
+summary(steps.filled)
+```
+
+Then we compute the mean number of steps, distinguishing between weekend days
+and normal days:
+
+```{r}
+steps.filled.by.interval.and.type <- aggregate(steps ~ interval + type,
+                                               steps.filled,
+                                               mean)
+summary(steps.filled.by.interval.and.type)
+```
+
+And finally we plot the two series:
+
+```{r}
+xyplot(steps ~ interval | type,
+       steps.filled.by.interval.and.type,
+       type = "l",
+       grid = TRUE,
+       layout = c(1, 2),
+       xlab = "Interval",
+       ylab = "Mean number of steps")
+```
+
+It is obvious that this person tends to walk more in the morning between 5 and 10 am on normal days than on the weekend.
